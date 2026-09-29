@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V1.5</title>
+<title>Câmeras RJ V1.8</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -27,7 +27,17 @@ main{max-width:1200px;margin:auto;padding:18px 16px 40px}
 .thumb{aspect-ratio:16/9;background:linear-gradient(135deg,#17314d,#0b1624);display:flex;align-items:center;justify-content:center;position:relative}
 .camicon{font-size:44px;opacity:.8}.live{position:absolute;top:10px;left:10px;background:var(--red);padding:5px 8px;border-radius:7px;font-size:11px;font-weight:900}.fav{position:absolute;right:10px;top:10px;border:0;background:rgba(0,0,0,.55);color:white;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer}
 .info{padding:13px}.info h3{margin:0 0 7px;font-size:16px}.meta{color:var(--muted);font-size:13px;display:flex;justify-content:space-between;gap:8px}
-.card-actions{display:flex;gap:8px;margin-top:12px}.mini-btn{flex:1;border:1px solid var(--line);background:#14283d;color:#fff;padding:9px;border-radius:10px;font-weight:700;cursor:pointer}.mini-btn.delete{background:#3a1720;border-color:#6d2735;color:#ffb7c0}
+.card-actions{display:flex;gap:8px;margin-top:12px}
+.managebar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 16px;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.managebar select{background:#081522;border:1px solid var(--line);color:#fff;padding:10px;border-radius:10px}
+.checkwrap{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.72);padding:7px 9px;border-radius:9px;font-size:12px;display:none}
+.manage-mode .checkwrap{display:block}.danger{background:#4a1720!important;border-color:#7d2b39!important}
+.status-good{color:#69e59a}.status-bad{color:#ff8794}.status-test{color:#ffd36a}.status-unknown{color:#ffd36a}
+.verifybox{display:none;margin:0 0 16px;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.verifybox.show{display:block}.progress{height:10px;background:#081522;border-radius:99px;overflow:hidden;margin:10px 0}.progress>div{height:100%;background:var(--blue);width:0%}
+.pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;margin:18px 0}
+.pager .btn:disabled{opacity:.45;cursor:not-allowed}.pageinfo{color:var(--muted);font-size:13px;padding:0 5px}
+.countinfo{color:var(--muted);font-size:13px;margin-left:auto}.mini-btn{flex:1;border:1px solid var(--line);background:#14283d;color:#fff;padding:9px;border-radius:10px;font-weight:700;cursor:pointer}.mini-btn.delete{background:#3a1720;border-color:#6d2735;color:#ffb7c0}
 .empty{grid-column:1/-1;padding:50px 20px;text-align:center;color:var(--muted)}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:50;padding:18px;overflow:auto}.modal.show{display:flex;align-items:center;justify-content:center}
 .box{width:min(1000px,100%);background:var(--panel);border:1px solid var(--line);border-radius:20px;overflow:hidden}
@@ -55,12 +65,12 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V1.5</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V1.8</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
   <div class="toolbar">
-    <input id="search" class="search" placeholder="🔎 Buscar Copacabana, trânsito, praia..." oninput="render()">
+    <input id="search" class="search" placeholder="🔎 Buscar Copacabana, trânsito, praia..." oninput="currentPage=1;render()">
     <button class="btn" onclick="resetFilters()">Todas as câmeras</button>
   </div>
 
@@ -73,7 +83,34 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
     <button class="tab" data-cat="IPTV" onclick="showIPTV(this)">📺 IPTV</button>
   </div>
 
-  <section class="grid" id="grid"></section>
+  <div class="managebar">
+<button class="btn" id="manageBtn" onclick="toggleManage()">☑️ Gerenciar em lote</button>
+<button class="btn" onclick="selectVisible()">Selecionar visíveis</button>
+<button class="btn" onclick="selectBroken()">⚠️ Selecionar falhas</button>
+<button class="btn primary" id="verifyBtn" onclick="startVerifier()">🔎 Verificar canais</button>
+<button class="btn danger" onclick="deleteSelected()">🗑️ Excluir selecionados</button>
+<select id="playlistFilter" onchange="filterPlaylist(this.value)"><option value="">Todas as listas</option></select>
+<button class="btn danger" onclick="deletePlaylist()">🗑️ Excluir lista atual</button>
+<select id="pageSize" onchange="changePageSize(this.value)">
+<option value="24">24 por página</option>
+<option value="50">50 por página</option>
+<option value="100">100 por página</option>
+<option value="200">200 por página</option>
+</select>
+<span class="countinfo" id="channelCount"></span>
+</div>
+<div class="verifybox" id="verifyBox">
+ <b id="verifyTitle">Verificando canais...</b>
+ <div class="progress"><div id="verifyProgress"></div></div>
+ <div class="note" id="verifyStats">Preparando...</div>
+ <button class="btn" id="stopVerifyBtn" onclick="stopVerifier()">⏹ Parar</button>
+</div>
+<section class="grid" id="grid"></section>
+<div class="pager" id="pager">
+ <button class="btn" id="prevPage" onclick="goPage(currentPage-1)">← Anterior</button>
+ <span class="pageinfo" id="pageInfo"></span>
+ <button class="btn" id="nextPage" onclick="goPage(currentPage+1)">Próxima →</button>
+</div>
   <footer>Use somente transmissões públicas ou que você tenha autorização para visualizar.</footer>
 </main>
 
@@ -133,6 +170,9 @@ const starter = [
  {id:'turismo1',name:'Turismo — espaço preparado',location:'Rio de Janeiro',category:'Turismo',type:'placeholder',url:'',fixed:true}
 ];
 let category='Todas';
+let playlistFilter='';
+let currentPage=1;
+let pageSize=parseInt(localStorage.getItem('camerasRJ_pageSize')||'24');
 let custom=JSON.parse(localStorage.getItem('camerasRJ_custom')||'null');
 if(custom===null){
   custom=starter.map(c=>({...c,fixed:false}));
@@ -150,30 +190,42 @@ let favorites=JSON.parse(localStorage.getItem('camerasRJ_favorites')||'[]');
 function allCams(){return custom}
 function render(){
  const q=document.getElementById('search').value.trim().toLowerCase();
+ refreshPlaylistOptions();
  let cams=allCams().filter(c=>{
    const match=(`${c.name} ${c.location} ${c.category}`).toLowerCase().includes(q);
+   const listOk=!playlistFilter || c.playlist===playlistFilter;
    const cat=category==='Todas'||c.category===category||(category==='Favoritos'&&favorites.includes(c.id))||(category==='IPTV'&&!!c.playlist);
-   return match&&cat;
+   return match&&cat&&listOk;
  });
  const grid=document.getElementById('grid');
+ const count=document.getElementById('channelCount');
+ if(count) count.textContent=cams.length+' canal(is)';
+ const totalPages=Math.max(1,Math.ceil(cams.length/pageSize));
+ if(currentPage>totalPages) currentPage=totalPages;
+ const start=(currentPage-1)*pageSize;
+ const pageCams=cams.slice(start,start+pageSize);
+ updatePager(cams.length,totalPages);
  if(!cams.length){grid.innerHTML='<div class="empty">Nenhuma câmera encontrada.</div>';return}
- grid.innerHTML=cams.map(c=>`
+ grid.innerHTML=pageCams.map(c=>`
  <article class="card" onclick="openViewer('${c.id}')">
-   <div class="thumb"><div class="camicon">📹</div><span class="live">${c.type==='placeholder'?'DEMO':'AO VIVO'}</span>
+   <div class="thumb"><div class="camicon">📹</div><span class="live">${c.broken?'FALHA':(c.type==='placeholder'?'DEMO':'AO VIVO')}</span>
+   <label class="checkwrap" onclick="event.stopPropagation()"><input type="checkbox" class="bulkcheck" value="${c.id}"> selecionar</label>
    <button class="fav" onclick="toggleFav(event,'${c.id}')">${favorites.includes(c.id)?'★':'☆'}</button></div>
    <div class="info"><h3>${esc(c.name)}</h3><div class="meta"><span>📍 ${esc(c.location)}</span><span>${esc(c.category)}</span></div>
+   <div class="note" style="margin-top:7px">${c.checkStatus==='ok'?'<span class="status-good">● Funcionando</span>':c.checkStatus==='bad'?'<span class="status-bad">● Falha / inacessível</span>':c.checkStatus==='testing'?'<span class="status-test">● Testando...</span>':c.checkStatus==='unknown'?'<span class="status-unknown">● Bloqueado / não verificável</span>':'○ Não verificado'}</div>
    <div class="card-actions">
      <button class="mini-btn" onclick="editCamera(event,'${c.id}')">✏️ Editar</button>
+     <button class="mini-btn" onclick="toggleBroken(event,'${c.id}')">${c.broken?'✅ Funciona':'⚠️ Falha'}</button>
      <button class="mini-btn delete" onclick="deleteCamera(event,'${c.id}')">🗑️ Excluir</button>
    </div>
  </div>
  </article>`).join('');
 }
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-function setCat(c,el){category=c;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
-function resetFilters(){category='Todas';document.getElementById('search').value='';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Todas'));render()}
-function showIPTV(el){category='IPTV';document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
-function showFavorites(){category='Favoritos';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Favoritos'));render()}
+function setCat(c,el){category=c;currentPage=1;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
+function resetFilters(){category='Todas';currentPage=1;document.getElementById('search').value='';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Todas'));render()}
+function showIPTV(el){category='IPTV';currentPage=1;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
+function showFavorites(){category='Favoritos';currentPage=1;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Favoritos'));render()}
 function toggleFav(e,id){e.stopPropagation();favorites=favorites.includes(id)?favorites.filter(x=>x!==id):[...favorites,id];localStorage.setItem('camerasRJ_favorites',JSON.stringify(favorites));render()}
 function openViewer(id){
  const c=allCams().find(x=>x.id===id); if(!c)return;
@@ -315,6 +367,142 @@ function importM3U(){
  localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
  closeIPTV(); resetFilters();
  alert(items.length+' canal(is) importado(s).');
+}
+function updatePager(total,totalPages){
+ const info=document.getElementById('pageInfo'), prev=document.getElementById('prevPage'), next=document.getElementById('nextPage');
+ if(info) info.textContent='Página '+currentPage+' de '+totalPages+' • '+total+' itens';
+ if(prev) prev.disabled=currentPage<=1;
+ if(next) next.disabled=currentPage>=totalPages;
+ const ps=document.getElementById('pageSize'); if(ps) ps.value=String(pageSize);
+}
+function goPage(n){
+ const total=allCams().length;
+ const max=Math.max(1,Math.ceil(total/pageSize));
+ currentPage=Math.max(1,Math.min(n,max)); render(); window.scrollTo({top:0,behavior:'smooth'});
+}
+function changePageSize(v){
+ pageSize=parseInt(v)||24; currentPage=1;
+ localStorage.setItem('camerasRJ_pageSize',String(pageSize)); render();
+}
+function refreshPlaylistOptions(){
+ const sel=document.getElementById('playlistFilter'); if(!sel)return;
+ const lists=[...new Set(custom.map(c=>c.playlist).filter(Boolean))].sort();
+ const cur=playlistFilter;
+ sel.innerHTML='<option value="">Todas as listas</option>'+lists.map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join('');
+ sel.value=cur;
+}
+function filterPlaylist(v){playlistFilter=v;currentPage=1;render()}
+function toggleManage(){
+ document.body.classList.toggle('manage-mode');
+ document.getElementById('manageBtn').textContent=document.body.classList.contains('manage-mode')?'✖ Sair da seleção':'☑️ Gerenciar em lote';
+}
+function selectVisible(){
+ document.body.classList.add('manage-mode'); document.getElementById('manageBtn').textContent='✖ Sair da seleção';
+ document.querySelectorAll('.bulkcheck').forEach(x=>x.checked=true);
+}
+function selectBroken(){
+ document.body.classList.add('manage-mode'); document.getElementById('manageBtn').textContent='✖ Sair da seleção';
+ const ids=new Set(custom.filter(c=>c.broken).map(c=>c.id));
+ document.querySelectorAll('.bulkcheck').forEach(x=>x.checked=ids.has(x.value));
+}
+function persist(){
+ localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
+ localStorage.setItem('camerasRJ_favorites',JSON.stringify(favorites));
+}
+function deleteSelected(){
+ const ids=[...document.querySelectorAll('.bulkcheck:checked')].map(x=>x.value);
+ if(!ids.length){alert('Selecione pelo menos um canal.');return}
+ if(!confirm('Excluir '+ids.length+' canal(is) selecionado(s)?'))return;
+ const set=new Set(ids); custom=custom.filter(c=>!set.has(c.id)); favorites=favorites.filter(id=>!set.has(id));
+ persist(); render();
+}
+function deletePlaylist(){
+ if(!playlistFilter){alert('Escolha uma lista no filtro primeiro.');return}
+ const n=custom.filter(c=>c.playlist===playlistFilter).length;
+ if(!confirm('Excluir a lista "'+playlistFilter+'" inteira com '+n+' canal(is)?'))return;
+ custom=custom.filter(c=>c.playlist!==playlistFilter); favorites=favorites.filter(id=>custom.some(c=>c.id===id));
+ playlistFilter=''; persist(); render();
+}
+function toggleBroken(e,id){
+ e.stopPropagation(); const c=custom.find(x=>x.id===id); if(!c)return;
+ c.broken=!c.broken; persist(); render();
+}
+
+let verifierStop=false;
+function getFilteredForVerify(){
+ const q=document.getElementById('search').value.trim().toLowerCase();
+ return custom.filter(c=>{
+   const match=(`${c.name} ${c.location} ${c.category}`).toLowerCase().includes(q);
+   const listOk=!playlistFilter || c.playlist===playlistFilter;
+   const cat=category==='Todas'||c.category===category||(category==='Favoritos'&&favorites.includes(c.id))||(category==='IPTV'&&!!c.playlist);
+   return match&&listOk&&cat&&c.type!=='placeholder';
+ });
+}
+function stopVerifier(){verifierStop=true}
+function timeout(ms){return new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))}
+async function probeChannel(c){
+ const url=safeUrl(c.url);
+ if(c.type==='youtube') return 'unknown';
+ if(!url) return 'bad';
+ // HLS: manifest fetch is the safest browser-side first test.
+ if(c.type==='hls'){
+   try{
+     const r=await Promise.race([fetch(url,{method:'GET',cache:'no-store'}),timeout(8000)]);
+     if(!r.ok){
+       if([404,410].includes(r.status)) return 'bad';
+       return 'unknown';
+     }
+     const t=await r.text();
+     return t.includes('#EXTM3U')?'ok':'unknown';
+   }catch(e){
+     // Browsers often surface CORS/network policy failures as TypeError.
+     // Do not call the channel dead unless failure is confirmable.
+     return 'unknown';
+   }
+ }
+ // Direct video: use a hidden media element. This can work even where fetch is blocked.
+ if(c.type==='video'){
+   return await new Promise(resolve=>{
+     const v=document.createElement('video'); let done=false;
+     const finish=x=>{if(done)return;done=true;clearTimeout(timer);v.removeAttribute('src');v.load();resolve(x)};
+     const timer=setTimeout(()=>finish('unknown'),8000);
+     v.preload='metadata'; v.muted=true;
+     v.onloadedmetadata=()=>finish('ok'); v.oncanplay=()=>finish('ok'); v.onerror=()=>finish('unknown'); v.src=url;
+   });
+ }
+ if(c.type==='iframe') return 'unknown';
+ return 'unknown';
+}
+async function startVerifier(){
+ const items=getFilteredForVerify();
+ if(!items.length){alert('Nenhum canal verificável no filtro atual.');return}
+ verifierStop=false;
+ const box=document.getElementById('verifyBox'); box.classList.add('show');
+ document.getElementById('verifyBtn').disabled=true;
+ let ok=0,bad=0,unknown=0,done=0;
+ // Moderate concurrency avoids opening thousands of requests at once.
+ const concurrency=6;
+ let cursor=0;
+ async function worker(){
+   while(cursor<items.length && !verifierStop){
+     const c=items[cursor++];
+     c.checkStatus='testing'; render();
+     const result=await probeChannel(c);
+     if(result==='ok'){c.checkStatus='ok';c.broken=false;ok++}
+     else if(result==='bad'){c.checkStatus='bad';c.broken=true;bad++}
+     else{c.checkStatus='unknown';unknown++}
+     c.lastChecked=Date.now(); done++;
+     document.getElementById('verifyProgress').style.width=Math.round(done/items.length*100)+'%';
+     document.getElementById('verifyStats').textContent=`${done}/${items.length} • ${ok} funcionando • ${bad} falhas • ${unknown} bloqueados/não verificáveis`;
+     if(done%10===0) persist();
+     render();
+   }
+ }
+ await Promise.all(Array.from({length:Math.min(concurrency,items.length)},worker));
+ persist(); render();
+ document.getElementById('verifyBtn').disabled=false;
+ document.getElementById('verifyTitle').textContent=verifierStop?'Verificação interrompida':'Verificação concluída';
+ document.getElementById('verifyStats').textContent=`${done}/${items.length} testados • ${ok} funcionando • ${bad} falhas • ${unknown} bloqueados/não verificáveis`;
 }
 function saveCamera(){
  const editingId=document.getElementById('editingId').value;
