@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#07111f">
+<title>Câmeras RJ V1.5</title>
+<style>
+:root{
+  --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
+  --text:#f5f8fc;--muted:#94a9bf;--blue:#2d8cff;--red:#ff3b4f;--gold:#ffc857;
+}
+*{box-sizing:border-box} body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+header{position:sticky;top:0;z-index:20;background:rgba(7,17,31,.96);border-bottom:1px solid var(--line);padding:14px 16px}
+.top{max-width:1200px;margin:auto;display:flex;gap:12px;align-items:center;justify-content:space-between}
+.brand{font-size:22px;font-weight:800;display:flex;align-items:center;gap:9px}.brand span{color:var(--blue)}
+.actions{display:flex;gap:8px}.btn{border:1px solid var(--line);background:var(--panel2);color:white;padding:10px 13px;border-radius:12px;cursor:pointer;font-weight:700}
+.btn.primary{background:var(--blue);border-color:var(--blue)}.btn:hover{filter:brightness(1.08)}
+main{max-width:1200px;margin:auto;padding:18px 16px 40px}
+.hero{background:linear-gradient(135deg,#10243c,#091522);border:1px solid var(--line);padding:20px;border-radius:20px;margin-bottom:16px}
+.hero h1{margin:0 0 6px;font-size:26px}.hero p{margin:0;color:var(--muted);line-height:1.5}
+.toolbar{display:grid;grid-template-columns:1fr auto;gap:10px;margin:16px 0}
+.search{width:100%;background:var(--panel);border:1px solid var(--line);color:white;padding:13px 15px;border-radius:13px;outline:none}
+.tabs{display:flex;gap:8px;overflow:auto;padding-bottom:4px;margin-bottom:16px}.tab{white-space:nowrap;background:var(--panel);border:1px solid var(--line);color:var(--muted);padding:9px 13px;border-radius:999px;cursor:pointer}.tab.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;overflow:hidden;cursor:pointer;transition:.2s}.card:hover{transform:translateY(-2px);border-color:#355778}
+.thumb{aspect-ratio:16/9;background:linear-gradient(135deg,#17314d,#0b1624);display:flex;align-items:center;justify-content:center;position:relative}
+.camicon{font-size:44px;opacity:.8}.live{position:absolute;top:10px;left:10px;background:var(--red);padding:5px 8px;border-radius:7px;font-size:11px;font-weight:900}.fav{position:absolute;right:10px;top:10px;border:0;background:rgba(0,0,0,.55);color:white;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer}
+.info{padding:13px}.info h3{margin:0 0 7px;font-size:16px}.meta{color:var(--muted);font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.card-actions{display:flex;gap:8px;margin-top:12px}.mini-btn{flex:1;border:1px solid var(--line);background:#14283d;color:#fff;padding:9px;border-radius:10px;font-weight:700;cursor:pointer}.mini-btn.delete{background:#3a1720;border-color:#6d2735;color:#ffb7c0}
+.empty{grid-column:1/-1;padding:50px 20px;text-align:center;color:var(--muted)}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:50;padding:18px;overflow:auto}.modal.show{display:flex;align-items:center;justify-content:center}
+.box{width:min(1000px,100%);background:var(--panel);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+.player{background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center}.player iframe,.player video{width:100%;height:100%;border:0}
+.player-msg{text-align:center;color:var(--muted);padding:20px}.player-msg b{display:block;color:white;font-size:22px;margin-bottom:8px}
+.boxbar{padding:14px;display:flex;justify-content:space-between;gap:12px;align-items:center}.boxbar h2{font-size:18px;margin:0}.close{font-size:18px}
+.form{display:grid;gap:10px;padding:0 14px 16px}.form input,.form select{background:#081522;border:1px solid var(--line);color:white;padding:12px;border-radius:10px}
+.note{font-size:12px;color:var(--muted);line-height:1.45}
+footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
+@media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.grid{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr}.hero h1{font-size:22px}.brand{font-size:19px}.top{align-items:center}.actions .btn:first-child{display:none}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="brand">📹 <span>Câmeras</span> RJ</div>
+    <div class="actions">
+      <button class="btn" onclick="showFavorites()">⭐ Favoritos</button>
+      <button class="btn" onclick="openIPTV()">📺 IPTV</button><button class="btn primary" onclick="openAdd()">＋ Câmera</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V1.5</small></h1>
+    <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
+  </section>
+
+  <div class="toolbar">
+    <input id="search" class="search" placeholder="🔎 Buscar Copacabana, trânsito, praia..." oninput="render()">
+    <button class="btn" onclick="resetFilters()">Todas as câmeras</button>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-cat="Todas" onclick="setCat('Todas',this)">Todas</button>
+    <button class="tab" data-cat="Praias" onclick="setCat('Praias',this)">🏖️ Praias</button>
+    <button class="tab" data-cat="Trânsito" onclick="setCat('Trânsito',this)">🚦 Trânsito</button>
+    <button class="tab" data-cat="Turismo" onclick="setCat('Turismo',this)">🗺️ Turismo</button>
+    <button class="tab" data-cat="Favoritos" onclick="setCat('Favoritos',this)">⭐ Favoritos</button>
+    <button class="tab" data-cat="IPTV" onclick="showIPTV(this)">📺 IPTV</button>
+  </div>
+
+  <section class="grid" id="grid"></section>
+  <footer>Use somente transmissões públicas ou que você tenha autorização para visualizar.</footer>
+</main>
+
+<div class="modal" id="viewer" onclick="backdropClose(event,'viewer')">
+  <div class="box">
+    <div class="player" id="player"></div>
+    <div class="boxbar">
+      <div><h2 id="viewerTitle"></h2><div class="note" id="viewerMeta"></div></div>
+      <button class="btn close" onclick="closeViewer()">✕ Fechar</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal" id="iptvModal" onclick="backdropClose(event,'iptvModal')">
+  <div class="box" style="max-width:650px">
+    <div class="boxbar"><h2>📺 Importar lista IPTV</h2><button class="btn close" onclick="closeIPTV()">✕</button></div>
+    <div class="form">
+      <input id="iptvListName" placeholder="Nome da lista (ex.: Câmeras públicas)">
+      <input id="iptvUrl" placeholder="URL HTTPS de uma lista .m3u (opcional)">
+      <button class="btn" onclick="loadM3UUrl()">🌐 Carregar URL</button>
+      <input id="iptvFile" type="file" accept=".m3u,.m3u8,text/plain" onchange="readM3UFile(event)">
+      <textarea id="iptvText" placeholder="#EXTM3U&#10;#EXTINF:-1 group-title=&quot;Praias&quot;,Copacabana&#10;https://servidor/exemplo.m3u8" style="min-height:190px;background:#081522;border:1px solid var(--line);color:white;padding:12px;border-radius:10px;resize:vertical"></textarea>
+      <div class="note">Importe apenas listas próprias, autorizadas ou de transmissões públicas. URLs remotas dependem de CORS do servidor. O sistema reconhece nome, group-title e tvg-logo quando presentes.</div>
+      <button class="btn primary" onclick="importM3U()">Importar canais</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="addModal" onclick="backdropClose(event,'addModal')">
+  <div class="box" style="max-width:600px">
+    <div class="boxbar"><h2 id="formTitle">Adicionar câmera pública</h2><button class="btn close" onclick="closeAdd()">✕</button></div>
+    <div class="form">
+      <input type="hidden" id="editingId">
+      <input id="camName" placeholder="Nome da câmera">
+      <input id="camLocation" placeholder="Local / bairro">
+      <select id="camCategory">
+        <option>Praias</option><option>Trânsito</option><option>Turismo</option><option>Outros</option>
+      </select>
+      <select id="camType">
+        <option value="youtube">YouTube (cole o link completo ou ID)</option>
+        <option value="iframe">Página incorporável (URL https)</option>
+        <option value="hls">M3U8 / HLS (.m3u8)</option>
+        <option value="video">Vídeo direto (MP4/WebM)</option>
+      </select>
+      <input id="camUrl" placeholder="Cole o link completo do YouTube ou URL pública">
+      <div class="note">No M3U8/HLS, cole a URL HTTPS da playlist .m3u8. No YouTube, você pode colar links watch?v=, youtu.be, /live/, /shorts/ ou o ID. Se o proprietário bloquear reprodução incorporada, use o botão “Abrir no YouTube”. Não use câmeras privadas ou transmissões sem autorização.</div>
+      <button id="saveCamBtn" class="btn primary" onclick="saveCamera()">Salvar câmera</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const starter = [
+ {id:'copa1',name:'Copacabana — demonstração',location:'Copacabana',category:'Praias',type:'placeholder',url:'',fixed:true},
+ {id:'transito1',name:'Trânsito — espaço preparado',location:'Rio de Janeiro',category:'Trânsito',type:'placeholder',url:'',fixed:true},
+ {id:'turismo1',name:'Turismo — espaço preparado',location:'Rio de Janeiro',category:'Turismo',type:'placeholder',url:'',fixed:true}
+];
+let category='Todas';
+let custom=JSON.parse(localStorage.getItem('camerasRJ_custom')||'null');
+if(custom===null){
+  custom=starter.map(c=>({...c,fixed:false}));
+  localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
+}else{
+  // V1.4: inclui as antigas demos no cadastro editável caso ainda não estejam salvas.
+  starter.forEach(s=>{
+    if(!custom.some(c=>c.id===s.id)) custom.unshift({...s,fixed:false});
+  });
+  custom=custom.map(c=>({...c,fixed:false}));
+  localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
+}
+let favorites=JSON.parse(localStorage.getItem('camerasRJ_favorites')||'[]');
+
+function allCams(){return custom}
+function render(){
+ const q=document.getElementById('search').value.trim().toLowerCase();
+ let cams=allCams().filter(c=>{
+   const match=(`${c.name} ${c.location} ${c.category}`).toLowerCase().includes(q);
+   const cat=category==='Todas'||c.category===category||(category==='Favoritos'&&favorites.includes(c.id))||(category==='IPTV'&&!!c.playlist);
+   return match&&cat;
+ });
+ const grid=document.getElementById('grid');
+ if(!cams.length){grid.innerHTML='<div class="empty">Nenhuma câmera encontrada.</div>';return}
+ grid.innerHTML=cams.map(c=>`
+ <article class="card" onclick="openViewer('${c.id}')">
+   <div class="thumb"><div class="camicon">📹</div><span class="live">${c.type==='placeholder'?'DEMO':'AO VIVO'}</span>
+   <button class="fav" onclick="toggleFav(event,'${c.id}')">${favorites.includes(c.id)?'★':'☆'}</button></div>
+   <div class="info"><h3>${esc(c.name)}</h3><div class="meta"><span>📍 ${esc(c.location)}</span><span>${esc(c.category)}</span></div>
+   <div class="card-actions">
+     <button class="mini-btn" onclick="editCamera(event,'${c.id}')">✏️ Editar</button>
+     <button class="mini-btn delete" onclick="deleteCamera(event,'${c.id}')">🗑️ Excluir</button>
+   </div>
+ </div>
+ </article>`).join('');
+}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function setCat(c,el){category=c;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
+function resetFilters(){category='Todas';document.getElementById('search').value='';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Todas'));render()}
+function showIPTV(el){category='IPTV';document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
+function showFavorites(){category='Favoritos';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Favoritos'));render()}
+function toggleFav(e,id){e.stopPropagation();favorites=favorites.includes(id)?favorites.filter(x=>x!==id):[...favorites,id];localStorage.setItem('camerasRJ_favorites',JSON.stringify(favorites));render()}
+function openViewer(id){
+ const c=allCams().find(x=>x.id===id); if(!c)return;
+ document.getElementById('viewerTitle').textContent=c.name;
+ document.getElementById('viewerMeta').textContent=`${c.location} • ${c.category}`;
+ const p=document.getElementById('player');
+ if(c.type==='youtube'){
+   const vid=getYouTubeId(c.url);
+   if(!vid){
+     p.innerHTML='<div class="player-msg"><b>⚠️ Link do YouTube inválido</b>Edite/cadastre novamente usando o link da live ou do vídeo.</div>';
+   }else{
+     const watch='https://www.youtube.com/watch?v='+encodeURIComponent(vid);
+     p.innerHTML=`<div style="width:100%;height:100%;position:relative">
+       <iframe style="width:100%;height:100%;border:0" src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(vid)}?autoplay=1&playsinline=1&rel=0"
+       allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+       <a href="${watch}" target="_blank" rel="noopener" style="position:absolute;right:10px;bottom:10px;background:#ff0033;color:white;text-decoration:none;padding:10px 12px;border-radius:10px;font-weight:800;font-size:13px">▶ Abrir no YouTube</a>
+     </div>`;
+   }
+ }else if(c.type==='iframe'){
+   p.innerHTML=`<iframe src="${safeUrl(c.url)}" allowfullscreen></iframe>`;
+ }else if(c.type==='hls'){
+   const src=safeUrl(c.url);
+   p.innerHTML=`<video id="hlsPlayer" controls autoplay muted playsinline style="width:100%;height:100%;background:#000"></video>`;
+   const video=document.getElementById('hlsPlayer');
+   if(!src){
+     p.innerHTML='<div class="player-msg"><b>⚠️ Link M3U8 inválido</b>Use uma URL pública HTTPS terminando ou apontando para uma playlist HLS.</div>';
+   }else if(video.canPlayType('application/vnd.apple.mpegurl')){
+     video.src=src;
+     video.play().catch(()=>{});
+   }else if(window.Hls && Hls.isSupported()){
+     const hls=new Hls({enableWorker:true,lowLatencyMode:true});
+     window.currentHls=hls;
+     hls.loadSource(src);
+     hls.attachMedia(video);
+     hls.on(Hls.Events.MANIFEST_PARSED,()=>video.play().catch(()=>{}));
+     hls.on(Hls.Events.ERROR,(event,data)=>{
+       if(data && data.fatal){
+         p.innerHTML='<div class="player-msg"><b>⚠️ Não foi possível abrir esta transmissão</b>O servidor pode bloquear CORS, exigir autenticação ou a transmissão pode estar offline.</div>';
+       }
+     });
+   }else{
+     p.innerHTML='<div class="player-msg"><b>⚠️ HLS não suportado</b>Este navegador não conseguiu reproduzir a transmissão M3U8.</div>';
+   }
+ }else if(c.type==='video'){
+   p.innerHTML=`<video src="${safeUrl(c.url)}" controls autoplay playsinline></video>`;
+ }else{
+   p.innerHTML='<div class="player-msg"><b>📡 Espaço de transmissão</b>Esta câmera é demonstrativa. Adicione uma fonte pública incorporável pelo botão “+ Câmera”.</div>';
+ }
+ document.getElementById('viewer').classList.add('show');
+}
+function getYouTubeId(input){
+ const s=String(input||'').trim();
+ if(/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+ try{
+   const u=new URL(s);
+   const host=u.hostname.replace(/^www\./,'');
+   if(host==='youtu.be') return u.pathname.split('/').filter(Boolean)[0]||'';
+   if(host.endsWith('youtube.com')){
+     if(u.searchParams.get('v')) return u.searchParams.get('v');
+     const parts=u.pathname.split('/').filter(Boolean);
+     const i=parts.findIndex(x=>['embed','live','shorts'].includes(x));
+     if(i>=0 && parts[i+1]) return parts[i+1];
+   }
+ }catch(e){}
+ const m=s.match(/(?:v=|youtu\.be\/|embed\/|live\/|shorts\/)([A-Za-z0-9_-]{11})/);
+ return m?m[1]:'';
+}
+function safeUrl(u){try{const x=new URL(u);return x.protocol==='https:'?x.href:''}catch{return ''}}
+function closeViewer(){
+ if(window.currentHls){try{window.currentHls.destroy()}catch(e){} window.currentHls=null}
+ document.getElementById('viewer').classList.remove('show');
+ document.getElementById('player').innerHTML='';
+}
+function openAdd(){
+ document.getElementById('editingId').value='';
+ document.getElementById('formTitle').textContent='Adicionar câmera pública';
+ document.getElementById('saveCamBtn').textContent='Salvar câmera';
+ ['camName','camLocation','camUrl'].forEach(id=>document.getElementById(id).value='');
+ document.getElementById('camCategory').value='Praias';
+ document.getElementById('camType').value='youtube';
+ document.getElementById('addModal').classList.add('show');
+}
+function closeAdd(){document.getElementById('addModal').classList.remove('show')}
+function backdropClose(e,id){
+ if(e.target.id!==id)return;
+ if(id==='viewer') closeViewer();
+ else if(id==='iptvModal') closeIPTV();
+ else closeAdd();
+}
+function openIPTV(){document.getElementById('iptvModal').classList.add('show')}
+function closeIPTV(){document.getElementById('iptvModal').classList.remove('show')}
+function readM3UFile(e){
+ const file=e.target.files&&e.target.files[0]; if(!file)return;
+ const r=new FileReader();
+ r.onload=()=>{document.getElementById('iptvText').value=r.result||''};
+ r.readAsText(file);
+}
+async function loadM3UUrl(){
+ const url=document.getElementById('iptvUrl').value.trim();
+ if(!safeUrl(url)){alert('Informe uma URL HTTPS válida.');return}
+ try{
+   const res=await fetch(url);
+   if(!res.ok) throw new Error('HTTP '+res.status);
+   document.getElementById('iptvText').value=await res.text();
+ }catch(e){
+   alert('Não foi possível carregar a lista. O servidor pode bloquear CORS. Você ainda pode baixar o arquivo .m3u e selecioná-lo aqui.');
+ }
+}
+function parseM3U(text,listName){
+ const lines=String(text||'').replace(/\r/g,'').split('\n').map(x=>x.trim()).filter(Boolean);
+ const result=[]; let info=null;
+ for(const line of lines){
+   if(line.startsWith('#EXTINF:')){
+     const name=(line.split(',').slice(1).join(',').trim()||'Canal IPTV');
+     const gm=line.match(/group-title="([^"]*)"/i);
+     const lm=line.match(/tvg-logo="([^"]*)"/i);
+     info={name,group:gm?gm[1]:'IPTV',logo:lm?lm[1]:''};
+   }else if(!line.startsWith('#') && /^(https?):\/\//i.test(line)){
+     const lower=line.toLowerCase();
+     const type=(lower.includes('.m3u8')||lower.includes('m3u8?'))?'hls':'video';
+     const meta=info||{name:'Canal IPTV',group:'IPTV',logo:''};
+     result.push({
+       id:'iptv_'+Date.now()+'_'+result.length,
+       name:meta.name, location:listName||'Lista IPTV',
+       category:meta.group||'IPTV', type, url:line, logo:meta.logo,
+       playlist:listName||'IPTV', fixed:false
+     });
+     info=null;
+   }
+ }
+ return result;
+}
+function importM3U(){
+ const text=document.getElementById('iptvText').value;
+ const listName=document.getElementById('iptvListName').value.trim()||'IPTV';
+ const items=parseM3U(text,listName);
+ if(!items.length){alert('Nenhum stream HTTP/HTTPS foi encontrado na lista.');return}
+ custom.push(...items);
+ localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
+ closeIPTV(); resetFilters();
+ alert(items.length+' canal(is) importado(s).');
+}
+function saveCamera(){
+ const editingId=document.getElementById('editingId').value;
+ const name=document.getElementById('camName').value.trim(), loc=document.getElementById('camLocation').value.trim();
+ const cat=document.getElementById('camCategory').value, type=document.getElementById('camType').value, url=document.getElementById('camUrl').value.trim();
+ if(!name||!loc||!url){alert('Preencha nome, local e fonte da câmera.');return}
+ if(type!=='youtube' && !safeUrl(url)){alert('Use uma URL HTTPS válida.');return}
+ if(editingId){
+   const i=custom.findIndex(c=>c.id===editingId);
+   if(i>=0) custom[i]={...custom[i],name,location:loc,category:cat,type,url};
+ }else{
+   custom.push({id:'u'+Date.now(),name,location:loc,category:cat,type,url});
+ }
+ localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
+ closeAdd();resetFilters();
+}
+function editCamera(e,id){
+ e.stopPropagation();
+ const c=custom.find(x=>x.id===id); if(!c)return;
+ document.getElementById('editingId').value=c.id;
+ document.getElementById('camName').value=c.name;
+ document.getElementById('camLocation').value=c.location;
+ document.getElementById('camCategory').value=c.category;
+ document.getElementById('camType').value=c.type;
+ document.getElementById('camUrl').value=c.url;
+ document.getElementById('formTitle').textContent='Editar câmera';
+ document.getElementById('saveCamBtn').textContent='Salvar alterações';
+ document.getElementById('addModal').classList.add('show');
+}
+function deleteCamera(e,id){
+ e.stopPropagation();
+ const c=custom.find(x=>x.id===id); if(!c)return;
+ if(!confirm('Excluir a câmera "'+c.name+'"?')) return;
+ custom=custom.filter(x=>x.id!==id);
+ favorites=favorites.filter(x=>x!==id);
+ localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
+ localStorage.setItem('camerasRJ_favorites',JSON.stringify(favorites));
+ render();
+}
+render();
+</script>
+</body>
+</html>
