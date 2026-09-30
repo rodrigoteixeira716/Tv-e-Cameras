@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V2.2</title>
+<title>Câmeras RJ V2.3</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -66,7 +66,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.2</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.3</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
@@ -198,17 +198,21 @@ let playlistFilter='';
 let currentPage=1;
 let pageSize=parseInt(localStorage.getItem('camerasRJ_pageSize')||'24');
 let custom=JSON.parse(localStorage.getItem('camerasRJ_custom')||'null');
-if(custom===null){
-  custom=starter.map(c=>({...c,fixed:false}));
-  localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
-}else{
-  // V1.4: inclui as antigas demos no cadastro editável caso ainda não estejam salvas.
-  starter.forEach(s=>{
-    if(!custom.some(c=>c.id===s.id)) custom.unshift({...s,fixed:false});
-  });
-  custom=custom.map(c=>({...c,fixed:false}));
-  localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
+
+// V2.3: demonstrações antigas não fazem mais parte dos canais reais.
+function isRealChannel(c){
+  if(!c || !String(c.url||'').trim()) return false;
+  if(c.type==='placeholder') return false;
+  if(['copa1','transito1','turismo1'].includes(c.id)) return false;
+  return true;
 }
+
+if(custom===null){
+  custom=[];
+}else{
+  custom=custom.filter(isRealChannel).map(c=>({...c,fixed:false}));
+}
+localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
 let favorites=JSON.parse(localStorage.getItem('camerasRJ_favorites')||'[]');
 
 function allCams(){return custom}
@@ -224,7 +228,7 @@ async function testCloud(){
    cloudReady=true;
    const backup=getMigrationSource();
    if((count||0)===0 && backup.length>0){
-     setCloudStatus('☁️ Conectado • '+backup.length+' canais locais aguardando migração',true);
+     setCloudStatus('☁️ Conectado • '+backup.length+' canais reais aguardando migração',true);
      custom=backup;
      favorites=backup.filter(c=>c.favorite || c.is_favorite).map(c=>c.id);
      persist();
@@ -242,10 +246,20 @@ function getMigrationSource(){
  try{
    const current=JSON.parse(localStorage.getItem('camerasRJ_custom')||'[]');
    const backup=JSON.parse(localStorage.getItem(LOCAL_MIGRATION_BACKUP_KEY)||'[]');
-   const a=Array.isArray(current)?current:[];
-   const b=Array.isArray(backup)?backup:[];
-   return b.length>a.length?b:a;
- }catch(e){return Array.isArray(custom)?custom:[]}
+   const a=(Array.isArray(current)?current:[]).filter(isRealChannel);
+   const b=(Array.isArray(backup)?backup:[]).filter(isRealChannel);
+
+   // Junta os canais reais das duas fontes sem duplicar URL.
+   const merged=[];
+   const seen=new Set();
+   [...a,...b].forEach(c=>{
+     const key=String(c.url||'').trim();
+     if(key && !seen.has(key)){ seen.add(key); merged.push(c); }
+   });
+   return merged;
+ }catch(e){
+   return (Array.isArray(custom)?custom:[]).filter(isRealChannel);
+ }
 }
 
 function showAllLocalForMigration(){
@@ -313,7 +327,7 @@ async function syncFromCloud(silent=false){
        favorites=localSource.filter(c=>c.favorite || c.is_favorite).map(c=>c.id);
        persist();
        cloudReady=true;
-       setCloudStatus('☁️ Nuvem vazia • '+localSource.length+' canais locais protegidos',true);
+       setCloudStatus('☁️ Nuvem vazia • '+localSource.length+' canais reais protegidos',true);
        showAllLocalForMigration();
        if(!silent) alert('O Supabase ainda está vazio. Seus '+localSource.length+' canais locais foram preservados. Use “Enviar dados deste aparelho”.');
        return;
@@ -331,8 +345,8 @@ async function syncFromCloud(silent=false){
 }
 async function migrateLocalToCloud(){
  const preview=getMigrationSource();
- if(!preview.length){alert('Não encontrei canais locais neste navegador para migrar.');return}
- if(!confirm('Foram encontrados '+preview.length+' canais neste aparelho. Enviar para o Supabase em lotes?')) return;
+ if(!preview.length){alert('Não encontrei canais reais neste navegador para migrar.');return}
+ if(!confirm('Foram encontrados '+preview.length+' canais reais neste aparelho. Enviar para o Supabase em lotes?')) return;
  try{
    setCloudStatus('☁️ Enviando dados locais...');
    const local=[...getMigrationSource()];
