@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V2.0</title>
+<title>Câmeras RJ V2.1</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -66,7 +66,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.0</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.1</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
@@ -170,6 +170,23 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 const SUPABASE_URL='https://gzjyfcthkupqhrseqxzo.supabase.co';
 const SUPABASE_KEY='sb_publishable_bjXgR9CEoEQe9zYq96l_BA_-G-ptXAL';
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+// V2.1: cópia de segurança daquilo que já existia neste navegador.
+// Nunca é sobrescrita por uma sincronização vazia do Supabase.
+const LOCAL_MIGRATION_BACKUP_KEY='camerasRJ_preCloudBackup_v21';
+(function preserveLocalBeforeCloud(){
+  try{
+    const raw=localStorage.getItem('camerasRJ_custom');
+    const arr=raw?JSON.parse(raw):[];
+    if(Array.isArray(arr) && arr.length>0){
+      const old=JSON.parse(localStorage.getItem(LOCAL_MIGRATION_BACKUP_KEY)||'[]');
+      if(!Array.isArray(old) || arr.length>old.length){
+        localStorage.setItem(LOCAL_MIGRATION_BACKUP_KEY,JSON.stringify(arr));
+      }
+    }
+  }catch(e){console.warn('Backup local:',e)}
+})();
+
 let cloudReady=false;
 const starter = [
  {id:'copa1',name:'Copacabana — demonstração',location:'Copacabana',category:'Praias',type:'placeholder',url:'',fixed:true},
@@ -202,14 +219,32 @@ function setCloudStatus(msg,good=false){
 }
 async function testCloud(){
  try{
-   const {error}=await sb.from('tv_playlists').select('id').limit(1);
+   const {count,error}=await sb.from('tv_channels').select('*',{count:'exact',head:true});
    if(error) throw error;
-   cloudReady=true; setCloudStatus('☁️ Supabase conectado',true);
+   cloudReady=true;
+   const backup=getMigrationSource();
+   if((count||0)===0 && backup.length>0){
+     setCloudStatus('☁️ Conectado • '+backup.length+' canais locais aguardando migração',true);
+     custom=backup;
+     persist();
+     render();
+     return;
+   }
+   setCloudStatus('☁️ Supabase conectado',true);
    await syncFromCloud(true);
  }catch(e){
    cloudReady=false; setCloudStatus('☁️ Supabase: falha na conexão');
    console.error(e);
  }
+}
+function getMigrationSource(){
+ try{
+   const current=JSON.parse(localStorage.getItem('camerasRJ_custom')||'[]');
+   const backup=JSON.parse(localStorage.getItem(LOCAL_MIGRATION_BACKUP_KEY)||'[]');
+   const a=Array.isArray(current)?current:[];
+   const b=Array.isArray(backup)?backup:[];
+   return b.length>a.length?b:a;
+ }catch(e){return Array.isArray(custom)?custom:[]}
 }
 function cloudToLocalChannel(r,playlistName){
  return {
@@ -234,6 +269,18 @@ async function syncFromCloud(silent=false){
      if(!data || data.length<step) break;
      from+=step;
    }
+   if(rows.length===0){
+     const localSource=getMigrationSource();
+     if(localSource.length>0){
+       custom=localSource;
+       persist();
+       cloudReady=true;
+       setCloudStatus('☁️ Nuvem vazia • '+localSource.length+' canais locais protegidos',true);
+       render();
+       if(!silent) alert('O Supabase ainda está vazio. Seus '+localSource.length+' canais locais foram preservados. Use “Enviar dados deste aparelho”.');
+       return;
+     }
+   }
    custom=rows.map(r=>cloudToLocalChannel(r,playlistMap[r.playlist_id]));
    favorites=rows.filter(r=>r.is_favorite).map(r=>r.id);
    persist(); cloudReady=true; setCloudStatus('☁️ Sincronizado • '+custom.length+' canais',true);
@@ -245,10 +292,12 @@ async function syncFromCloud(silent=false){
  }
 }
 async function migrateLocalToCloud(){
- if(!confirm('Enviar as listas e canais salvos neste aparelho para o Supabase? Os dados serão enviados em lotes.')) return;
+ const preview=getMigrationSource();
+ if(!preview.length){alert('Não encontrei canais locais neste navegador para migrar.');return}
+ if(!confirm('Foram encontrados '+preview.length+' canais neste aparelho. Enviar para o Supabase em lotes?')) return;
  try{
    setCloudStatus('☁️ Enviando dados locais...');
-   const local=[...custom];
+   const local=[...getMigrationSource()];
    const playlistNames=[...new Set(local.map(c=>c.playlist||c.location||'Câmeras').filter(Boolean))];
    const pmap={};
    for(const name of playlistNames){
@@ -281,8 +330,10 @@ async function migrateLocalToCloud(){
      const {count}=await sb.from('tv_channels').select('*',{count:'exact',head:true}).eq('playlist_id',id);
      await sb.from('tv_playlists').update({channel_count:count||0}).eq('id',id);
    }
-   cloudReady=true; await syncFromCloud(true);
-   alert('Migração concluída. '+sent+' canal(is) enviados para a nuvem.');
+   cloudReady=true;
+   localStorage.setItem('camerasRJ_cloudMigrated','1');
+   await syncFromCloud(true);
+   alert('Migração concluída. '+sent+' canal(is) enviados para a nuvem. Agora você pode sincronizar no computador.');
  }catch(e){
    console.error(e); setCloudStatus('☁️ Erro ao enviar dados');
    alert('Erro ao enviar para o Supabase: '+(e.message||e));
