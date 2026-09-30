@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V2.1</title>
+<title>Câmeras RJ V2.2</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -66,7 +66,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.1</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.2</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
@@ -226,8 +226,9 @@ async function testCloud(){
    if((count||0)===0 && backup.length>0){
      setCloudStatus('☁️ Conectado • '+backup.length+' canais locais aguardando migração',true);
      custom=backup;
+     favorites=backup.filter(c=>c.favorite || c.is_favorite).map(c=>c.id);
      persist();
-     render();
+     showAllLocalForMigration();
      return;
    }
    setCloudStatus('☁️ Supabase conectado',true);
@@ -246,6 +247,42 @@ function getMigrationSource(){
    return b.length>a.length?b:a;
  }catch(e){return Array.isArray(custom)?custom:[]}
 }
+
+function showAllLocalForMigration(){
+  try{
+    // Limpa busca textual.
+    document.querySelectorAll('input[type="search"], input[id*="search" i], input[placeholder*="buscar" i], input[placeholder*="pesquis" i]')
+      .forEach(el=>{ el.value=''; el.dispatchEvent(new Event('input',{bubbles:true})); });
+
+    // Volta selects de filtro para opções equivalentes a Todos/Todas, quando existirem.
+    document.querySelectorAll('select').forEach(sel=>{
+      const opts=[...sel.options];
+      const idx=opts.findIndex(o=>/^(todos|todas|all)$/i.test((o.textContent||'').trim()) || o.value==='' || o.value==='all');
+      if(idx>=0){ sel.selectedIndex=idx; sel.dispatchEvent(new Event('change',{bubbles:true})); }
+    });
+
+    // Desmarca checkboxes usados como filtros/seleção em massa.
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+      if(!/favor/i.test(cb.id||'') && !/favor/i.test(cb.name||'')) cb.checked=false;
+    });
+
+    // Tenta zerar variáveis de paginação/filtro comuns se existirem no script.
+    try{ if(typeof currentPage!=='undefined') currentPage=1; }catch(e){}
+    try{ if(typeof page!=='undefined') page=1; }catch(e){}
+    try{ if(typeof currentFilter!=='undefined') currentFilter='all'; }catch(e){}
+    try{ if(typeof categoryFilter!=='undefined') categoryFilter='all'; }catch(e){}
+    try{ if(typeof playlistFilter!=='undefined') playlistFilter='all'; }catch(e){}
+
+    render();
+
+    // Aviso discreto no console para diagnóstico.
+    console.info('[V2.2] Registros locais carregados para conferência:', custom.length);
+  }catch(e){
+    console.warn('Falha ao liberar filtros para conferência:',e);
+    render();
+  }
+}
+
 function cloudToLocalChannel(r,playlistName){
  return {
    id:r.id,name:r.name||'Canal',location:r.location||playlistName||'Supabase',
@@ -273,10 +310,11 @@ async function syncFromCloud(silent=false){
      const localSource=getMigrationSource();
      if(localSource.length>0){
        custom=localSource;
+       favorites=localSource.filter(c=>c.favorite || c.is_favorite).map(c=>c.id);
        persist();
        cloudReady=true;
        setCloudStatus('☁️ Nuvem vazia • '+localSource.length+' canais locais protegidos',true);
-       render();
+       showAllLocalForMigration();
        if(!silent) alert('O Supabase ainda está vazio. Seus '+localSource.length+' canais locais foram preservados. Use “Enviar dados deste aparelho”.');
        return;
      }
