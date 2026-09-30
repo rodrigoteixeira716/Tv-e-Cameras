@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V1.8</title>
+<title>Câmeras RJ V2.0</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -51,11 +51,12 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 @media(max-width:560px){.grid{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr}.hero h1{font-size:22px}.brand{font-size:19px}.top{align-items:center}.actions .btn:first-child{display:none}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <header>
   <div class="top">
-    <div class="brand">📹 <span>Câmeras</span> RJ</div>
+    <div><div class="brand">📹 <span>Câmeras</span> RJ</div><div id="cloudStatus" style="font-size:11px;color:var(--muted);margin-top:3px">☁️ Conectando...</div></div>
     <div class="actions">
       <button class="btn" onclick="showFavorites()">⭐ Favoritos</button>
       <button class="btn" onclick="openIPTV()">📺 IPTV</button><button class="btn primary" onclick="openAdd()">＋ Câmera</button>
@@ -65,7 +66,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V1.8</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.0</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
@@ -84,6 +85,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
   </div>
 
   <div class="managebar">
+<button class="btn primary" onclick="syncFromCloud()">☁️ Sincronizar</button>
+<button class="btn" onclick="migrateLocalToCloud()">⬆️ Enviar dados deste aparelho</button>
 <button class="btn" id="manageBtn" onclick="toggleManage()">☑️ Gerenciar em lote</button>
 <button class="btn" onclick="selectVisible()">Selecionar visíveis</button>
 <button class="btn" onclick="selectBroken()">⚠️ Selecionar falhas</button>
@@ -164,6 +167,10 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 </div>
 
 <script>
+const SUPABASE_URL='https://gzjyfcthkupqhrseqxzo.supabase.co';
+const SUPABASE_KEY='sb_publishable_bjXgR9CEoEQe9zYq96l_BA_-G-ptXAL';
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let cloudReady=false;
 const starter = [
  {id:'copa1',name:'Copacabana — demonstração',location:'Copacabana',category:'Praias',type:'placeholder',url:'',fixed:true},
  {id:'transito1',name:'Trânsito — espaço preparado',location:'Rio de Janeiro',category:'Trânsito',type:'placeholder',url:'',fixed:true},
@@ -188,6 +195,99 @@ if(custom===null){
 let favorites=JSON.parse(localStorage.getItem('camerasRJ_favorites')||'[]');
 
 function allCams(){return custom}
+
+function setCloudStatus(msg,good=false){
+ const el=document.getElementById('cloudStatus'); if(!el)return;
+ el.textContent=msg; el.style.color=good?'#69e59a':'var(--muted)';
+}
+async function testCloud(){
+ try{
+   const {error}=await sb.from('tv_playlists').select('id').limit(1);
+   if(error) throw error;
+   cloudReady=true; setCloudStatus('☁️ Supabase conectado',true);
+   await syncFromCloud(true);
+ }catch(e){
+   cloudReady=false; setCloudStatus('☁️ Supabase: falha na conexão');
+   console.error(e);
+ }
+}
+function cloudToLocalChannel(r,playlistName){
+ return {
+   id:r.id,name:r.name||'Canal',location:r.location||playlistName||'Supabase',
+   category:r.category||'IPTV',type:r.stream_type||'hls',url:r.stream_url||'',
+   logo:r.logo_url||'',playlist:playlistName||'',broken:!!r.is_broken,
+   checkStatus:r.check_status||'unknown',
+   lastChecked:r.last_checked?new Date(r.last_checked).getTime():null,fixed:false
+ };
+}
+async function syncFromCloud(silent=false){
+ if(!cloudReady && !silent){setCloudStatus('☁️ Tentando conectar...')}
+ try{
+   const {data:pls,error:pe}=await sb.from('tv_playlists').select('*').order('created_at');
+   if(pe) throw pe;
+   const playlistMap=Object.fromEntries((pls||[]).map(p=>[p.id,p.name]));
+   let rows=[],from=0,step=1000;
+   while(true){
+     const {data,error}=await sb.from('tv_channels').select('*').range(from,from+step-1);
+     if(error) throw error;
+     rows.push(...(data||[]));
+     if(!data || data.length<step) break;
+     from+=step;
+   }
+   custom=rows.map(r=>cloudToLocalChannel(r,playlistMap[r.playlist_id]));
+   favorites=rows.filter(r=>r.is_favorite).map(r=>r.id);
+   persist(); cloudReady=true; setCloudStatus('☁️ Sincronizado • '+custom.length+' canais',true);
+   currentPage=1; render();
+   if(!silent) alert('Sincronização concluída: '+custom.length+' canal(is).');
+ }catch(e){
+   console.error(e); setCloudStatus('☁️ Erro ao sincronizar');
+   if(!silent) alert('Não foi possível sincronizar com o Supabase: '+(e.message||e));
+ }
+}
+async function migrateLocalToCloud(){
+ if(!confirm('Enviar as listas e canais salvos neste aparelho para o Supabase? Os dados serão enviados em lotes.')) return;
+ try{
+   setCloudStatus('☁️ Enviando dados locais...');
+   const local=[...custom];
+   const playlistNames=[...new Set(local.map(c=>c.playlist||c.location||'Câmeras').filter(Boolean))];
+   const pmap={};
+   for(const name of playlistNames){
+     let {data,error}=await sb.from('tv_playlists').select('id,name').eq('name',name).limit(1);
+     if(error) throw error;
+     let id=data&&data[0]&&data[0].id;
+     if(!id){
+       const ins=await sb.from('tv_playlists').insert({name}).select('id').single();
+       if(ins.error) throw ins.error; id=ins.data.id;
+     }
+     pmap[name]=id;
+   }
+   const rows=local.filter(c=>c.url).map(c=>{
+     const pn=c.playlist||c.location||'Câmeras';
+     return {playlist_id:pmap[pn],name:c.name||'Canal',location:c.location||null,
+       category:c.category||'IPTV',stream_type:c.type||'hls',stream_url:c.url,
+       logo_url:c.logo||null,is_favorite:favorites.includes(c.id),is_broken:!!c.broken,
+       check_status:['ok','bad','unknown','testing'].includes(c.checkStatus)?c.checkStatus:'unknown',
+       last_checked:c.lastChecked?new Date(c.lastChecked).toISOString():null};
+   });
+   let sent=0;
+   for(let i=0;i<rows.length;i+=200){
+     const batch=rows.slice(i,i+200);
+     const {error}=await sb.from('tv_channels').upsert(batch,{onConflict:'playlist_id,stream_url',ignoreDuplicates:false});
+     if(error) throw error;
+     sent+=batch.length; setCloudStatus('☁️ Enviando '+sent+'/'+rows.length+'...');
+   }
+   // refresh counts
+   for(const [name,id] of Object.entries(pmap)){
+     const {count}=await sb.from('tv_channels').select('*',{count:'exact',head:true}).eq('playlist_id',id);
+     await sb.from('tv_playlists').update({channel_count:count||0}).eq('id',id);
+   }
+   cloudReady=true; await syncFromCloud(true);
+   alert('Migração concluída. '+sent+' canal(is) enviados para a nuvem.');
+ }catch(e){
+   console.error(e); setCloudStatus('☁️ Erro ao enviar dados');
+   alert('Erro ao enviar para o Supabase: '+(e.message||e));
+ }
+}
 function render(){
  const q=document.getElementById('search').value.trim().toLowerCase();
  refreshPlaylistOptions();
@@ -543,6 +643,7 @@ function deleteCamera(e,id){
  render();
 }
 render();
+testCloud();
 </script>
 </body>
 </html>
