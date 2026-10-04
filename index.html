@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V2.3</title>
+<title>Câmeras RJ V2.4</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -66,7 +66,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.3</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.4</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
@@ -333,6 +333,18 @@ async function syncFromCloud(silent=false){
        return;
      }
    }
+   const cloudUrls=new Set(rows.map(r=>String(r.stream_url||'').trim()));
+   const localUnsynced=(Array.isArray(custom)?custom:[]).filter(c=>c.url && !cloudUrls.has(String(c.url).trim()) && !['copa1','transito1','turismo1'].includes(c.id));
+   if(localUnsynced.length && !silent){
+     const send=confirm('Proteção contra perda: encontrei '+localUnsynced.length+' canal(is) neste aparelho que ainda não estão no Supabase.\n\nOK = enviar esses canais para a nuvem antes de sincronizar.\nCancelar = manter os dados locais sem substituir.');
+     if(send){
+       await cloudImportChannels(localUnsynced);
+       return await syncFromCloud(true);
+     }else{
+       setCloudStatus('☁️ Sincronização cancelada • dados locais protegidos');
+       return;
+     }
+   }
    custom=rows.map(r=>cloudToLocalChannel(r,playlistMap[r.playlist_id]));
    favorites=rows.filter(r=>r.is_favorite).map(r=>r.id);
    persist(); cloudReady=true; setCloudStatus('☁️ Sincronizado • '+custom.length+' canais',true);
@@ -391,6 +403,66 @@ async function migrateLocalToCloud(){
    alert('Erro ao enviar para o Supabase: '+(e.message||e));
  }
 }
+
+async function ensureCloudPlaylist(name){
+  name=(name||'Câmeras').trim()||'Câmeras';
+  let q=await sb.from('tv_playlists').select('id,name').eq('name',name).limit(1);
+  if(q.error) throw q.error;
+  if(q.data&&q.data[0]) return q.data[0].id;
+  const ins=await sb.from('tv_playlists').insert({name}).select('id').single();
+  if(ins.error) throw ins.error;
+  return ins.data.id;
+}
+function localToCloudRow(c,playlistId){
+  return {
+    playlist_id:playlistId,name:c.name||'Canal',location:c.location||null,
+    category:c.category||'IPTV',stream_type:c.type||'hls',stream_url:c.url,
+    logo_url:c.logo||null,is_favorite:favorites.includes(c.id),is_broken:!!c.broken,
+    check_status:['ok','bad','unknown','testing'].includes(c.checkStatus)?c.checkStatus:'unknown',
+    last_checked:c.lastChecked?new Date(c.lastChecked).toISOString():null
+  };
+}
+async function cloudSaveChannel(c){
+  if(!cloudReady) throw new Error('Sem conexão com o Supabase.');
+  const pn=c.playlist||c.location||'Câmeras';
+  const pid=await ensureCloudPlaylist(pn);
+  const row=localToCloudRow(c,pid);
+  if(String(c.id||'').includes('-')){
+    const r=await sb.from('tv_channels').update(row).eq('id',c.id).select('*').single();
+    if(r.error) throw r.error; return r.data;
+  }
+  const r=await sb.from('tv_channels').upsert(row,{onConflict:'playlist_id,stream_url'}).select('*').single();
+  if(r.error) throw r.error; return r.data;
+}
+async function cloudDeleteIds(ids){
+  const cloudIds=ids.filter(id=>String(id).includes('-'));
+  if(!cloudIds.length)return;
+  const r=await sb.from('tv_channels').delete().in('id',cloudIds);
+  if(r.error) throw r.error;
+}
+async function cloudUpdateFields(id,fields){
+  if(!String(id||'').includes('-')) return;
+  const r=await sb.from('tv_channels').update(fields).eq('id',id);
+  if(r.error) throw r.error;
+}
+async function cloudImportChannels(items){
+  if(!cloudReady) throw new Error('Sem conexão com o Supabase.');
+  const groups={};
+  items.forEach(c=>{const pn=c.playlist||c.location||'IPTV';(groups[pn]??=[]).push(c)});
+  let sent=0;
+  for(const [pn,list] of Object.entries(groups)){
+    const pid=await ensureCloudPlaylist(pn);
+    for(let i=0;i<list.length;i+=200){
+      const rows=list.slice(i,i+200).map(c=>localToCloudRow(c,pid));
+      const r=await sb.from('tv_channels').upsert(rows,{onConflict:'playlist_id,stream_url'}).select('*');
+      if(r.error) throw r.error;
+      sent+=rows.length;
+      setCloudStatus('☁️ Salvando '+sent+'/'+items.length+' canais...',true);
+    }
+  }
+  return sent;
+}
+
 function render(){
  const q=document.getElementById('search').value.trim().toLowerCase();
  refreshPlaylistOptions();
@@ -429,7 +501,19 @@ function setCat(c,el){category=c;currentPage=1;document.querySelectorAll('.tab')
 function resetFilters(){category='Todas';currentPage=1;document.getElementById('search').value='';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Todas'));render()}
 function showIPTV(el){category='IPTV';currentPage=1;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
 function showFavorites(){category='Favoritos';currentPage=1;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.cat==='Favoritos'));render()}
-function toggleFav(e,id){e.stopPropagation();favorites=favorites.includes(id)?favorites.filter(x=>x!==id):[...favorites,id];localStorage.setItem('camerasRJ_favorites',JSON.stringify(favorites));render()}
+async function toggleFav(e,id){
+ e.stopPropagation();
+ const was=favorites.includes(id);
+ favorites=was?favorites.filter(x=>x!==id):[...favorites,id];
+ persist(); render();
+ try{
+   await cloudUpdateFields(id,{is_favorite:!was});
+   setCloudStatus('☁️ Favorito salvo',true);
+ }catch(err){
+   favorites=was?[...favorites,id]:favorites.filter(x=>x!==id); persist(); render();
+   alert('Não foi possível salvar o favorito na nuvem: '+(err.message||err));
+ }
+}
 function openViewer(id){
  const c=allCams().find(x=>x.id===id); if(!c)return;
  document.getElementById('viewerTitle').textContent=c.name;
@@ -561,15 +645,22 @@ function parseM3U(text,listName){
  }
  return result;
 }
-function importM3U(){
+async function importM3U(){
  const text=document.getElementById('iptvText').value;
  const listName=document.getElementById('iptvListName').value.trim()||'IPTV';
  const items=parseM3U(text,listName);
  if(!items.length){alert('Nenhum stream HTTP/HTTPS foi encontrado na lista.');return}
- custom.push(...items);
- localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
- closeIPTV(); resetFilters();
- alert(items.length+' canal(is) importado(s).');
+ if(!cloudReady){alert('Aguarde a conexão com o Supabase antes de importar.');return}
+ try{
+   await cloudImportChannels(items);
+   closeIPTV();
+   await syncFromCloud(true);
+   resetFilters();
+   alert(items.length+' canal(is) salvo(s) no Supabase.');
+ }catch(err){
+   console.error(err); setCloudStatus('☁️ Erro ao importar');
+   alert('A importação não foi concluída na nuvem: '+(err.message||err));
+ }
 }
 function updatePager(total,totalPages){
  const info=document.getElementById('pageInfo'), prev=document.getElementById('prevPage'), next=document.getElementById('nextPage');
@@ -612,23 +703,31 @@ function persist(){
  localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
  localStorage.setItem('camerasRJ_favorites',JSON.stringify(favorites));
 }
-function deleteSelected(){
+async function deleteSelected(){
  const ids=[...document.querySelectorAll('.bulkcheck:checked')].map(x=>x.value);
  if(!ids.length){alert('Selecione pelo menos um canal.');return}
- if(!confirm('Excluir '+ids.length+' canal(is) selecionado(s)?'))return;
- const set=new Set(ids); custom=custom.filter(c=>!set.has(c.id)); favorites=favorites.filter(id=>!set.has(id));
- persist(); render();
+ if(!confirm('Excluir '+ids.length+' canal(is) selecionado(s) da nuvem?'))return;
+ try{
+   await cloudDeleteIds(ids);
+   const set=new Set(ids); custom=custom.filter(c=>!set.has(c.id)); favorites=favorites.filter(id=>!set.has(id));
+   persist(); render(); setCloudStatus('☁️ Exclusão sincronizada',true);
+ }catch(err){alert('Não foi possível excluir da nuvem: '+(err.message||err))}
 }
-function deletePlaylist(){
+async function deletePlaylist(){
  if(!playlistFilter){alert('Escolha uma lista no filtro primeiro.');return}
- const n=custom.filter(c=>c.playlist===playlistFilter).length;
- if(!confirm('Excluir a lista "'+playlistFilter+'" inteira com '+n+' canal(is)?'))return;
- custom=custom.filter(c=>c.playlist!==playlistFilter); favorites=favorites.filter(id=>custom.some(c=>c.id===id));
- playlistFilter=''; persist(); render();
+ const targets=custom.filter(c=>c.playlist===playlistFilter), n=targets.length;
+ if(!confirm('Excluir a lista "'+playlistFilter+'" inteira com '+n+' canal(is) da nuvem?'))return;
+ try{
+   await cloudDeleteIds(targets.map(c=>c.id));
+   custom=custom.filter(c=>c.playlist!==playlistFilter); favorites=favorites.filter(id=>custom.some(c=>c.id===id));
+   playlistFilter=''; persist(); render(); setCloudStatus('☁️ Lista excluída',true);
+ }catch(err){alert('Não foi possível excluir a lista: '+(err.message||err))}
 }
-function toggleBroken(e,id){
+async function toggleBroken(e,id){
  e.stopPropagation(); const c=custom.find(x=>x.id===id); if(!c)return;
- c.broken=!c.broken; persist(); render();
+ const old=!!c.broken; c.broken=!old; persist(); render();
+ try{await cloudUpdateFields(id,{is_broken:!!c.broken});setCloudStatus('☁️ Status salvo',true)}
+ catch(err){c.broken=old;persist();render();alert('Erro ao salvar status: '+(err.message||err))}
 }
 
 let verifierStop=false;
@@ -703,24 +802,42 @@ async function startVerifier(){
  }
  await Promise.all(Array.from({length:Math.min(concurrency,items.length)},worker));
  persist(); render();
+ try{
+   const changed=items.filter(c=>String(c.id||'').includes('-'));
+   for(let i=0;i<changed.length;i+=100){
+     await Promise.all(changed.slice(i,i+100).map(c=>cloudUpdateFields(c.id,{
+       is_broken:!!c.broken,check_status:c.checkStatus||'unknown',
+       last_checked:c.lastChecked?new Date(c.lastChecked).toISOString():null
+     })));
+   }
+   setCloudStatus('☁️ Verificação salva na nuvem',true);
+ }catch(err){console.error(err);setCloudStatus('☁️ Verificação local; erro ao salvar')}
  document.getElementById('verifyBtn').disabled=false;
  document.getElementById('verifyTitle').textContent=verifierStop?'Verificação interrompida':'Verificação concluída';
  document.getElementById('verifyStats').textContent=`${done}/${items.length} testados • ${ok} funcionando • ${bad} falhas • ${unknown} bloqueados/não verificáveis`;
 }
-function saveCamera(){
+async function saveCamera(){
  const editingId=document.getElementById('editingId').value;
  const name=document.getElementById('camName').value.trim(), loc=document.getElementById('camLocation').value.trim();
  const cat=document.getElementById('camCategory').value, type=document.getElementById('camType').value, url=document.getElementById('camUrl').value.trim();
  if(!name||!loc||!url){alert('Preencha nome, local e fonte da câmera.');return}
  if(type!=='youtube' && !safeUrl(url)){alert('Use uma URL HTTPS válida.');return}
- if(editingId){
-   const i=custom.findIndex(c=>c.id===editingId);
-   if(i>=0) custom[i]={...custom[i],name,location:loc,category:cat,type,url};
- }else{
-   custom.push({id:'u'+Date.now(),name,location:loc,category:cat,type,url});
+ if(!cloudReady){alert('Aguarde aparecer “Supabase conectado” antes de salvar.');return}
+ const old=editingId?custom.find(c=>c.id===editingId):null;
+ const draft=old?{...old,name,location:loc,category:cat,type,url}:{id:'pending_'+Date.now(),name,location:loc,category:cat,type,url,playlist:loc};
+ try{
+   setCloudStatus('☁️ Salvando canal...');
+   const row=await cloudSaveChannel(draft);
+   const saved=cloudToLocalChannel(row,draft.playlist||loc);
+   if(old){
+     const i=custom.findIndex(c=>c.id===editingId); if(i>=0)custom[i]=saved;
+     if(favorites.includes(editingId)){favorites=favorites.filter(x=>x!==editingId);favorites.push(saved.id)}
+   }else custom.push(saved);
+   persist(); closeAdd(); resetFilters(); setCloudStatus('☁️ Canal salvo na nuvem',true);
+ }catch(err){
+   console.error(err); setCloudStatus('☁️ Erro ao salvar');
+   alert('O canal NÃO foi salvo. Nada será perdido silenciosamente: '+(err.message||err));
  }
- localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
- closeAdd();resetFilters();
 }
 function editCamera(e,id){
  e.stopPropagation();
@@ -735,15 +852,15 @@ function editCamera(e,id){
  document.getElementById('saveCamBtn').textContent='Salvar alterações';
  document.getElementById('addModal').classList.add('show');
 }
-function deleteCamera(e,id){
+async function deleteCamera(e,id){
  e.stopPropagation();
  const c=custom.find(x=>x.id===id); if(!c)return;
- if(!confirm('Excluir a câmera "'+c.name+'"?')) return;
- custom=custom.filter(x=>x.id!==id);
- favorites=favorites.filter(x=>x!==id);
- localStorage.setItem('camerasRJ_custom',JSON.stringify(custom));
- localStorage.setItem('camerasRJ_favorites',JSON.stringify(favorites));
- render();
+ if(!confirm('Excluir a câmera "'+c.name+'" também do Supabase?')) return;
+ try{
+   await cloudDeleteIds([id]);
+   custom=custom.filter(x=>x.id!==id); favorites=favorites.filter(x=>x!==id);
+   persist(); render(); setCloudStatus('☁️ Exclusão sincronizada',true);
+ }catch(err){alert('Não foi possível excluir da nuvem: '+(err.message||err))}
 }
 render();
 testCloud();
