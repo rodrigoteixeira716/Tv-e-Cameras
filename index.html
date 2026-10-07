@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V2.4</title>
+<title>Câmeras RJ V2.5</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -66,7 +66,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.4</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.5</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
@@ -447,20 +447,68 @@ async function cloudUpdateFields(id,fields){
 }
 async function cloudImportChannels(items){
   if(!cloudReady) throw new Error('Sem conexão com o Supabase.');
+
+  // V2.5: elimina URLs repetidas dentro da mesma playlist ANTES do UPSERT.
+  // O PostgreSQL não permite que o mesmo ON CONFLICT atualize a mesma linha
+  // duas vezes dentro de um único comando.
+  const unique=[];
+  const seen=new Set();
+  let duplicates=0;
+
+  items.forEach(c=>{
+    const pn=(c.playlist||c.location||'IPTV').trim()||'IPTV';
+    const url=String(c.url||'').trim();
+    if(!url) return;
+
+    const key=pn.toLowerCase()+'||'+url;
+    if(seen.has(key)){
+      duplicates++;
+      return;
+    }
+    seen.add(key);
+    unique.push({...c,playlist:pn,url});
+  });
+
   const groups={};
-  items.forEach(c=>{const pn=c.playlist||c.location||'IPTV';(groups[pn]??=[]).push(c)});
+  unique.forEach(c=>{
+    const pn=c.playlist||'IPTV';
+    (groups[pn]??=[]).push(c);
+  });
+
   let sent=0;
   for(const [pn,list] of Object.entries(groups)){
     const pid=await ensureCloudPlaylist(pn);
+
+    // Segurança extra: cada lote também é deduplicado pela URL.
     for(let i=0;i<list.length;i+=200){
-      const rows=list.slice(i,i+200).map(c=>localToCloudRow(c,pid));
-      const r=await sb.from('tv_channels').upsert(rows,{onConflict:'playlist_id,stream_url'}).select('*');
+      const batch=list.slice(i,i+200);
+      const batchSeen=new Set();
+      const cleanBatch=batch.filter(c=>{
+        const u=String(c.url||'').trim();
+        if(!u || batchSeen.has(u)) return false;
+        batchSeen.add(u);
+        return true;
+      });
+
+      if(!cleanBatch.length) continue;
+
+      const rows=cleanBatch.map(c=>localToCloudRow(c,pid));
+      const r=await sb.from('tv_channels')
+        .upsert(rows,{onConflict:'playlist_id,stream_url'})
+        .select('*');
+
       if(r.error) throw r.error;
+
       sent+=rows.length;
-      setCloudStatus('☁️ Salvando '+sent+'/'+items.length+' canais...',true);
+      setCloudStatus(
+        '☁️ Salvando '+sent+'/'+unique.length+' canais'+
+        (duplicates?' • '+duplicates+' duplicado(s) ignorado(s)':'')+'...',
+        true
+      );
     }
   }
-  return sent;
+
+  return {sent,duplicates,total:items.length,unique:unique.length};
 }
 
 function render(){
@@ -652,11 +700,13 @@ async function importM3U(){
  if(!items.length){alert('Nenhum stream HTTP/HTTPS foi encontrado na lista.');return}
  if(!cloudReady){alert('Aguarde a conexão com o Supabase antes de importar.');return}
  try{
-   await cloudImportChannels(items);
+   const result=await cloudImportChannels(items);
    closeIPTV();
    await syncFromCloud(true);
    resetFilters();
-   alert(items.length+' canal(is) salvo(s) no Supabase.');
+   let msg=result.sent+' canal(is) salvo(s) no Supabase.';
+   if(result.duplicates) msg+='\n'+result.duplicates+' entrada(s) duplicada(s) foram ignoradas.';
+   alert(msg);
  }catch(err){
    console.error(err); setCloudStatus('☁️ Erro ao importar');
    alert('A importação não foi concluída na nuvem: '+(err.message||err));
