@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#07111f">
-<title>Câmeras RJ V2.5</title>
+<title>Câmeras RJ V2.6</title>
 <style>
 :root{
   --bg:#07111f;--panel:#0d1b2a;--panel2:#11243a;--line:#20364f;
@@ -49,6 +49,10 @@ main{max-width:1200px;margin:auto;padding:18px 16px 40px}
 footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 @media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.grid{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr}.hero h1{font-size:22px}.brand{font-size:19px}.top{align-items:center}.actions .btn:first-child{display:none}}
+
+.card-logo-wrap{height:82px;display:flex;align-items:center;justify-content:center;margin:4px 0 10px}
+.card-logo{max-width:120px;max-height:72px;object-fit:contain;border-radius:10px;background:rgba(255,255,255,.06);padding:6px}
+.card-logo-fallback{font-size:42px;opacity:.7}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -66,7 +70,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
 
 <main>
   <section class="hero">
-    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.5</small></h1>
+    <h1>Rio de Janeiro ao vivo <small style="font-size:12px;color:var(--muted)">V2.6</small></h1>
     <p>Central para organizar e visualizar transmissões públicas. Favoritos e câmeras adicionadas por você ficam salvos neste navegador.</p>
   </section>
 
@@ -160,6 +164,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding-top:30px}
         <option value="video">Vídeo direto (MP4/WebM)</option>
       </select>
       <input id="camUrl" placeholder="Cole o link completo do YouTube ou URL pública">
+        <input id="camLogo" type="url" placeholder="URL da logo do canal (opcional)" style="margin-top:10px">
       <div class="note">No M3U8/HLS, cole a URL HTTPS da playlist .m3u8. No YouTube, você pode colar links watch?v=, youtu.be, /live/, /shorts/ ou o ID. Se o proprietário bloquear reprodução incorporada, use o botão “Abrir no YouTube”. Não use câmeras privadas ou transmissões sem autorização.</div>
       <button id="saveCamBtn" class="btn primary" onclick="saveCamera()">Salvar câmera</button>
     </div>
@@ -531,7 +536,7 @@ function render(){
  if(!cams.length){grid.innerHTML='<div class="empty">Nenhuma câmera encontrada.</div>';return}
  grid.innerHTML=pageCams.map(c=>`
  <article class="card" onclick="openViewer('${c.id}')">
-   <div class="thumb"><div class="camicon">📹</div><span class="live">${c.broken?'FALHA':(c.type==='placeholder'?'DEMO':'AO VIVO')}</span>
+   <div class="thumb">${c.logo?`<img class="card-logo" src="${esc(c.logo)}" alt="Logo ${esc(c.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="camicon" style="display:none">📹</div>`:`<div class="camicon">📹</div>`}<span class="live">${c.broken?'FALHA':(c.type==='placeholder'?'DEMO':'AO VIVO')}</span>
    <label class="checkwrap" onclick="event.stopPropagation()"><input type="checkbox" class="bulkcheck" value="${c.id}"> selecionar</label>
    <button class="fav" onclick="toggleFav(event,'${c.id}')">${favorites.includes(c.id)?'★':'☆'}</button></div>
    <div class="info"><h3>${esc(c.name)}</h3><div class="meta"><span>📍 ${esc(c.location)}</span><span>${esc(c.category)}</span></div>
@@ -642,6 +647,8 @@ function openAdd(){
  document.getElementById('camCategory').value='Praias';
  document.getElementById('camType').value='youtube';
  document.getElementById('addModal').classList.add('show');
+
+ const lg=document.getElementById('camLogo'); if(lg) lg.value='';
 }
 function closeAdd(){document.getElementById('addModal').classList.remove('show')}
 function backdropClose(e,id){
@@ -869,12 +876,12 @@ async function startVerifier(){
 async function saveCamera(){
  const editingId=document.getElementById('editingId').value;
  const name=document.getElementById('camName').value.trim(), loc=document.getElementById('camLocation').value.trim();
- const cat=document.getElementById('camCategory').value, type=document.getElementById('camType').value, url=document.getElementById('camUrl').value.trim();
+ const cat=document.getElementById('camCategory').value, type=document.getElementById('camType').value, url=document.getElementById('camUrl').value.trim(), logo=(document.getElementById('camLogo')?.value||'').trim();
  if(!name||!loc||!url){alert('Preencha nome, local e fonte da câmera.');return}
  if(type!=='youtube' && !safeUrl(url)){alert('Use uma URL HTTPS válida.');return}
  if(!cloudReady){alert('Aguarde aparecer “Supabase conectado” antes de salvar.');return}
  const old=editingId?custom.find(c=>c.id===editingId):null;
- const draft=old?{...old,name,location:loc,category:cat,type,url}:{id:'pending_'+Date.now(),name,location:loc,category:cat,type,url,playlist:loc};
+ const draft=old?{...old,name,location:loc,category:cat,type,url,logo}:{id:'pending_'+Date.now(),name,location:loc,category:cat,type,url,logo,playlist:loc};
  try{
    setCloudStatus('☁️ Salvando canal...');
    const row=await cloudSaveChannel(draft);
@@ -898,6 +905,7 @@ function editCamera(e,id){
  document.getElementById('camCategory').value=c.category;
  document.getElementById('camType').value=c.type;
  document.getElementById('camUrl').value=c.url;
+ document.getElementById('camLogo').value=c.logo||'';
  document.getElementById('formTitle').textContent='Editar câmera';
  document.getElementById('saveCamBtn').textContent='Salvar alterações';
  document.getElementById('addModal').classList.add('show');
